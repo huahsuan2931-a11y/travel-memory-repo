@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Travel Map 🦖 — Sherry's World</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#0D1B2A; --ink:#F8F6F0; --ink60:rgba(248,246,240,.6); --ink30:rgba(248,246,240,.3);
+  --y:#D4A820; --yl:rgba(212,168,32,.15); --g:#3D6B4A; --gl:rgba(61,107,74,.2);
+  --ocean:#0A1628; --land:#1A2E42; --visited:#3D6B4A; --planned:#B8941A; --wish:#4A6B8A;
+}
+body{background:var(--bg);color:var(--ink);font-family:'Noto Sans TC',sans-serif;overflow:hidden;height:100vh;}
+h1,h2,h3{font-family:'Instrument Sans',sans-serif;}
+
+/* ── Header ── */
+header{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 32px;height:60px;
+  background:linear-gradient(to bottom,rgba(13,27,42,.95),transparent);
+}
+.logo{font-size:1.1rem;font-weight:700;display:flex;align-items:center;gap:8px;letter-spacing:-.01em;}
+.logo-sub{font-size:.7rem;color:var(--ink60);font-style:italic;font-family:'Instrument Sans',sans-serif;}
+.header-right{display:flex;align-items:center;gap:16px;}
+.stats{display:flex;gap:16px;}
+.stat{text-align:center;}
+.stat-num{font-size:1.1rem;font-weight:700;font-family:'DM Mono',monospace;color:var(--y);}
+.stat-lbl{font-size:.62rem;color:var(--ink60);letter-spacing:.05em;text-transform:uppercase;}
+.open-app-btn{
+  padding:7px 18px;background:var(--y);color:#0D1B2A;
+  border:none;border-radius:20px;font-family:'Instrument Sans',sans-serif;
+  font-weight:700;font-size:.82rem;cursor:pointer;
+  transition:opacity .15s;text-decoration:none;display:flex;align-items:center;gap:5px;
+}
+.open-app-btn:hover{opacity:.88;}
+
+/* ── Map ── */
+#map-container{width:100vw;height:100vh;}
+svg{width:100%;height:100%;}
+.country{
+  fill:var(--land);stroke:rgba(248,246,240,.08);stroke-width:.4;
+  cursor:default;transition:fill .2s;
+}
+.country.has-trips{fill:var(--visited);cursor:pointer;stroke:rgba(61,107,74,.5);stroke-width:.8;}
+.country.has-planned{fill:var(--planned);cursor:pointer;stroke:rgba(184,148,26,.5);stroke-width:.8;}
+.country.has-wishlist{fill:var(--wish);cursor:pointer;stroke:rgba(74,107,138,.5);stroke-width:.8;}
+.country:hover{filter:brightness(1.3);}
+.country.home{fill:#8C3042;stroke:rgba(140,48,66,.6);stroke-width:.8;}
+
+/* graticule */
+.graticule{fill:none;stroke:rgba(248,246,240,.04);stroke-width:.3;}
+
+/* ── Legend ── */
+.legend{
+  position:fixed;bottom:28px;left:32px;
+  background:rgba(13,27,42,.85);backdrop-filter:blur(8px);
+  border:1px solid rgba(248,246,240,.1);border-radius:12px;
+  padding:12px 16px;display:flex;flex-direction:column;gap:6px;
+}
+.legend-item{display:flex;align-items:center;gap:8px;font-size:.75rem;color:var(--ink60);}
+.legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+
+/* ── Tooltip ── */
+.tooltip{
+  position:fixed;pointer-events:none;
+  background:rgba(13,27,42,.92);backdrop-filter:blur(10px);
+  border:1px solid rgba(248,246,240,.15);border-radius:12px;
+  padding:12px 16px;min-width:200px;max-width:280px;
+  opacity:0;transition:opacity .15s;z-index:200;
+}
+.tooltip.show{opacity:1;}
+.tt-country{font-size:.7rem;color:var(--ink60);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;}
+.tt-trips{display:flex;flex-direction:column;gap:5px;}
+.tt-trip{
+  display:flex;align-items:center;gap:8px;padding:6px 10px;
+  border-radius:8px;cursor:pointer;transition:background .15s;
+  text-decoration:none;color:var(--ink);
+  border:1px solid rgba(248,246,240,.1);
+}
+.tt-trip:hover{background:rgba(248,246,240,.1);}
+.tt-emoji{font-size:1rem;}
+.tt-info{flex:1;min-width:0;}
+.tt-name{font-size:.82rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tt-date{font-size:.68rem;color:var(--ink60);font-family:'DM Mono',monospace;}
+.tt-tag{font-size:.62rem;padding:2px 7px;border-radius:10px;font-family:'Instrument Sans',sans-serif;font-weight:600;}
+.tt-tag-done{background:var(--gl);color:#6BCB77;}
+.tt-tag-progress{background:var(--gl);color:#3D6B4A;}
+.tt-tag-plan{background:var(--yl);color:var(--y);}
+.tt-tag-wish{background:rgba(74,107,138,.2);color:#4A8FAA;}
+.tt-no-trips{font-size:.78rem;color:var(--ink60);padding:4px 0;}
+.tt-arrow{font-size:.7rem;color:var(--ink60);}
+
+/* ── Dino ── */
+#dino{position:absolute;pointer-events:none;z-index:50;transition:left 12s linear, top 12s linear;}
+.dino-svg{width:64px;height:48px;opacity:.7;filter:drop-shadow(0 0 8px rgba(61,107,74,.6));}
+
+/* ── Pulse dots（visited countries）── */
+.pulse-dot{
+  fill:rgba(61,107,74,.8);animation:pulse-anim 2s ease-in-out infinite;
+  cursor:pointer;
+}
+@keyframes pulse-anim{
+  0%,100%{r:3;opacity:.8;}
+  50%{r:5;opacity:.4;}
+}
+
+/* ── Zoom controls ── */
+.zoom-controls{
+  position:fixed;right:28px;bottom:28px;
+  display:flex;flex-direction:column;gap:6px;
+}
+.zoom-btn{
+  width:36px;height:36px;border-radius:8px;
+  background:rgba(13,27,42,.85);border:1px solid rgba(248,246,240,.15);
+  color:var(--ink);font-size:1rem;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:background .15s;
+}
+.zoom-btn:hover{background:rgba(248,246,240,.1);}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">🦖 Sherry's Travel Map</div>
+    <div class="logo-sub">you only live once</div>
+  </div>
+  <div class="header-right">
+    <div class="stats">
+      <div class="stat"><div class="stat-num" id="statCountries">0</div><div class="stat-lbl">Countries</div></div>
+      <div class="stat"><div class="stat-num" id="statTrips">0</div><div class="stat-lbl">Trips</div></div>
+      <div class="stat"><div class="stat-num" id="statDone">0</div><div class="stat-lbl">Done</div></div>
+    </div>
+    <a href="./travel-memory-final.html" class="open-app-btn" id="appLink">
+      📋 Travel Memory
+    </a>
+  </div>
+</header>
+
+<div id="map-container">
+  <svg id="world-map"></svg>
+</div>
+
+<div id="dino">
+  <svg class="dino-svg" viewBox="0 0 96 72" fill="none">
+    <path d="M2 22 Q3 9 11 6 Q20 3 28 8 Q37 13 37 22 Q36 30 27 32 Q15 34 7 28 Z" stroke="#6BCB77" stroke-width="1" fill="none"/>
+    <ellipse cx="17" cy="17" rx="7" ry="6.5" stroke="#6BCB77" stroke-width=".9" fill="none"/>
+    <ellipse cx="28" cy="11" rx="4.5" ry="3.5" stroke="#6BCB77" stroke-width=".8" fill="none"/>
+    <path d="M32 8 Q35 6 37 8" stroke="#6BCB77" stroke-width=".7" fill="none" stroke-linecap="round"/>
+    <path d="M3 26 Q5 34 15 37 Q26 40 37 32" stroke="#6BCB77" stroke-width=".9" fill="none"/>
+    <path d="M37 22 L41 26 L37 30" stroke="#6BCB77" stroke-width=".8" fill="none"/>
+    <path d="M8 32 L7 38 M12 33 L11 39 M16 33 L15 40 M20 33 L19 39 M24 32 L23 38 M28 31 L27 37" stroke="#6BCB77" stroke-width=".75" stroke-linecap="round"/>
+    <path d="M41 24 Q46 21 50 23" stroke="#6BCB77" stroke-width=".9" stroke-linecap="round"/>
+    <path d="M50 23 Q64 19 78 21 Q85 22 88 24" stroke="#D4A820" stroke-width="1"/>
+    <path d="M52 23 L50 16 M57 21 L55 14 M62 20 L60 13 M67 20 L65 13 M72 20 L70 14 M77 21 L75 15" stroke="#D4A820" stroke-width=".65" stroke-linecap="round"/>
+    <path d="M54 23 Q48 31 50 41M58 22 Q54 31 55 42M63 21 Q61 31 60 43M68 21 Q68 31 65 43M73 21 Q75 30 70 43" stroke="#D4A820" stroke-width=".85" fill="none"/>
+    <path d="M50 41 Q60 47 70 44" stroke="#D4A820" stroke-width=".7" fill="none"/>
+    <path d="M52 27 L47 36M47 36 L43 44" stroke="#6BCB77" stroke-width=".9" stroke-linecap="round"/>
+    <path d="M76 21 Q83 17 88 23 Q92 28 88 36 Q82 40 77 36 Q72 32 74 27 Z" stroke="#D4A820" stroke-width=".85" fill="none"/>
+    <path d="M88 24 Q92 28 94 34 Q95 40 93 47 Q91 52 88 55" stroke="#B8941A" stroke-width=".9"/>
+    <path d="M80 36 Q82 46 80 55" stroke="#D4A820" stroke-width="1.15" fill="none" stroke-linecap="round"/>
+    <path d="M79 72 L71 66 M79 72 L76 78 M79 72 L84 78 M79 72 L87 67" stroke="#B8941A" stroke-width=".9" stroke-linecap="round"/>
+    <path d="M76 34 Q78 44 76 53" stroke="#D4A820" stroke-width=".9" fill="none" opacity=".45" stroke-linecap="round"/>
+    <path d="M75 70 L67 64 M75 70 L72 76 M75 70 L80 76 M75 70 L83 65" stroke="#B8941A" stroke-width=".75" opacity=".45" stroke-linecap="round"/>
+  </svg>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--visited)"></div>已完成</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--planned)"></div>規劃中 / 待規劃</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--wish)"></div>願望清單</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#8C3042"></div>台灣（家）</div>
+</div>
+
+<div class="zoom-controls">
+  <button class="zoom-btn" onclick="zoomIn()">＋</button>
+  <button class="zoom-btn" onclick="zoomOut()">－</button>
+  <button class="zoom-btn" onclick="resetZoom()" title="重置">⟳</button>
+</div>
+
+<script>
+/* ══════ 設定 ══════ */
+const GAS_URL = '';  // ← 填入 GAS Web App URL
+const APP_URL = './travel-memory-final.html'; // ← travel-memory 的路徑
+
+/* ══════ 示範資料（GAS 未設定時使用）══════ */
+const DEMO_COUNTRIES = {
+  'Japan':      [{id:'kobe',    title:'神戶馬拉松訓練之旅', status:'in_progress', dates:'2026/11/15–11/18', emoji:'✈️'}],
+  'Thailand':   [{id:'chiangmai',title:'清邁 Solo Travel',  status:'done',        dates:'2024/12/10–12/17', emoji:'🍜'}],
+  'Vietnam':    [{id:'hanoi',   title:'河內古城散步',       status:'done',        dates:'2024/08/20–08/25', emoji:'🏮'}],
+  'Taiwan':     [{id:'xueshan', title:'雪山東峰',           status:'done',        dates:'2024/10/15–10/16', emoji:'🏔️'}],
+  'Nepal':      [{id:'nepal',   title:'尼泊爾 ABC 健行',    status:'wish_list',   dates:'TBD',              emoji:'🏔️'}],
+  'Iceland':    [{id:'iceland', title:'冰島環島自駕',       status:'wish_list',   dates:'TBD',              emoji:'🌋'}],
+};
+
+/* 國家名稱 → D3 GeoJSON 的 name 對應表 */
+const NAME_MAP = {
+  'Japan':'Japan','Thailand':'Thailand','Vietnam':'Viet Nam','Taiwan':'Taiwan',
+  'Nepal':'Nepal','Iceland':'Iceland','South Korea':'South Korea',
+  'Singapore':'Singapore','Hong Kong':'Hong Kong','France':'France',
+  'Italy':'Italy','Germany':'Germany','USA':'United States of America',
+};
+
+let countryData = {};
+let projection, path, svg, g, zoom;
+const W = window.innerWidth, H = window.innerHeight;
+
+/* ══════ 載入 GAS 資料 ══════ */
+async function loadCountryData() {
+  if (!GAS_URL) {
+    countryData = DEMO_COUNTRIES;
+    return;
+  }
+  try {
+    const url = new URL(GAS_URL);
+    url.searchParams.set('action', 'getAllCountries');
+    const r = await fetch(url.toString());
+    const j = await r.json();
+    if (j.success) countryData = j.data;
+  } catch(_) {
+    countryData = DEMO_COUNTRIES;
+  }
+}
+
+/* ══════ 建立地圖 ══════ */
+async function buildMap() {
+  await loadCountryData();
+  updateStats();
+
+  // 拉 TopoJSON 世界地圖
+  const world = await d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
+  const countries = topojson.feature(world, world.objects.countries);
+
+  // 國家 numeric id → name 對應（簡化，用 GeoJSON properties）
+  const countryNames = await d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
+    .then(w => {
+      const names = {};
+      // 用 country code lookup
+      return names;
+    }).catch(()=>({}));
+
+  projection = d3.geoNaturalEarth1()
+    .scale(180)
+    .translate([W/2, H/2]);
+  path = d3.geoPath().projection(projection);
+
+  svg = d3.select('#world-map');
+  zoom = d3.zoom().scaleExtent([1, 8]).on('zoom', (e) => {
+    g.attr('transform', e.transform);
+  });
+  svg.call(zoom);
+
+  g = svg.append('g');
+
+  // 海洋背景
+  g.append('rect').attr('width', W*3).attr('height', H*3).attr('x',-W).attr('y',-H).attr('fill',var_('--ocean'));
+
+  // 網格線
+  g.append('path')
+    .datum(d3.geoGraticule()())
+    .attr('class','graticule')
+    .attr('d', path);
+
+  // 決定每個 feature 的顏色
+  function getCountryClass(name) {
+    if (name === 'Taiwan' || name === 'Taiwan, Province of China') return 'home';
+    const trips = getTripsForName(name);
+    if (!trips.length) return '';
+    const hasDone     = trips.some(t => t.status === 'done');
+    const hasProgress = trips.some(t => t.status === 'in_progress' || t.status === 'need_to_plan');
+    const hasWish     = trips.some(t => t.status === 'wish_list');
+    if (hasDone)     return 'has-trips';
+    if (hasProgress) return 'has-planned';
+    if (hasWish)     return 'has-wishlist';
+    return '';
+  }
+
+  // 繪製國家
+  g.selectAll('.country')
+    .data(countries.features)
+    .enter().append('path')
+    .attr('class', d => `country ${getCountryClass(d.properties.name||'')}`)
+    .attr('d', path)
+    .on('mousemove', onCountryHover)
+    .on('mouseleave', () => { document.getElementById('tooltip').classList.remove('show'); })
+    .on('click', onCountryClick);
+
+  // 加上動畫脈衝點（已完成的城市）
+  addPulseDots();
+
+  // 啟動恐龍動畫
+  moveDino();
+  setInterval(moveDino, 13000);
+}
+
+function var_(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+function getTripsForName(name) {
+  const match = Object.entries(NAME_MAP).find(([k,v]) => v === name || k === name);
+  const key = match ? match[0] : name;
+  return countryData[key] || countryData[name] || [];
+}
+
+/* ══════ 懸停 tooltip ══════ */
+function onCountryHover(event, d) {
+  const name = d.properties.name || '';
+  const trips = getTripsForName(name);
+  const tt = document.getElementById('tooltip');
+
+  let html = `<div class="tt-country">${name}</div>`;
+  if (trips.length > 0) {
+    html += `<div class="tt-trips">`;
+    trips.forEach(t => {
+      const tagCls = {done:'tt-tag-done',in_progress:'tt-tag-progress',need_to_plan:'tt-tag-plan',wish_list:'tt-tag-wish'}[t.status]||'';
+      const tagLabel = {done:'完成',in_progress:'進行中',need_to_plan:'待規劃',wish_list:'願望'}[t.status]||'';
+      const url = `${APP_URL}?trip=${t.id}`;
+      html += `<a class="tt-trip" href="${url}">
+        <span class="tt-emoji">${t.emoji}</span>
+        <div class="tt-info">
+          <div class="tt-name">${t.title}</div>
+          <div class="tt-date">${t.dates}</div>
+        </div>
+        <span class="tt-tag ${tagCls}">${tagLabel}</span>
+        <span class="tt-arrow">›</span>
+      </a>`;
+    });
+    html += `</div>`;
+  } else {
+    html += `<div class="tt-no-trips">尚未有旅行記錄</div>`;
+  }
+  tt.innerHTML = html;
+
+  // 定位 tooltip
+  const x = Math.min(event.clientX + 16, W - 300);
+  const y = Math.min(event.clientY - 10, H - 200);
+  tt.style.left = x + 'px';
+  tt.style.top  = y + 'px';
+  tt.classList.add('show');
+}
+
+/* ══════ 點擊國家 ══════ */
+function onCountryClick(event, d) {
+  const name = d.properties.name || '';
+  const trips = getTripsForName(name);
+  if (trips.length === 1) {
+    window.location.href = `${APP_URL}?trip=${trips[0].id}`;
+  } else if (trips.length > 1) {
+    // 多筆 → tooltip 已顯示，讓使用者自己選
+    onCountryHover(event, d);
+  }
+}
+
+/* ══════ 脈衝點（已造訪城市）══════ */
+const CITY_COORDS = {
+  'Japan':    [135.5, 34.7],
+  'Thailand': [100.5, 13.8],
+  'Vietnam':  [105.8, 21.0],
+  'Taiwan':   [121.0, 23.7],
+};
+function addPulseDots() {
+  Object.entries(CITY_COORDS).forEach(([country, [lng, lat]]) => {
+    const trips = countryData[country];
+    if (!trips || !trips.some(t => t.status === 'done')) return;
+    const [cx, cy] = projection([lng, lat]);
+    g.append('circle')
+      .attr('class','pulse-dot')
+      .attr('cx', cx).attr('cy', cy).attr('r', 3);
+  });
+}
+
+/* ══════ 統計 ══════ */
+function updateStats() {
+  const allTrips = Object.values(countryData).flat();
+  document.getElementById('statCountries').textContent = Object.keys(countryData).length;
+  document.getElementById('statTrips').textContent = allTrips.length;
+  document.getElementById('statDone').textContent = allTrips.filter(t=>t.status==='done').length;
+}
+
+/* ══════ 恐龍動畫 ══════ */
+const WAYPOINTS = [
+  [0.15,0.5],[0.3,0.35],[0.48,0.55],[0.62,0.42],[0.75,0.38],
+  [0.85,0.5],[0.7,0.62],[0.5,0.65],[0.3,0.6],[0.15,0.5]
+];
+let dinoIdx = 0;
+function moveDino() {
+  dinoIdx = (dinoIdx + 1) % WAYPOINTS.length;
+  const [px, py] = WAYPOINTS[dinoIdx];
+  const dino = document.getElementById('dino');
+  dino.style.left = (px * W - 32) + 'px';
+  dino.style.top  = (py * H - 24) + 'px';
+  dino.style.opacity = '1';
+  // 添加輕微浮動動畫
+  dino.animate([
+    {transform:'translateY(0)'},
+    {transform:'translateY(-4px)'},
+    {transform:'translateY(0)'},
+  ], {duration:3000, iterations:Infinity, easing:'ease-in-out'});
+}
+
+/* ══════ 縮放控制 ══════ */
+function zoomIn() { svg.transition().call(zoom.scaleBy, 1.5); }
+function zoomOut() { svg.transition().call(zoom.scaleBy, 0.67); }
+function resetZoom() { svg.transition().call(zoom.transform, d3.zoomIdentity); }
+
+/* ══════ 啟動 ══════ */
+buildMap();
+
+// 設定 APP_URL（如有需要可以動態改）
+document.getElementById('appLink').href = APP_URL;
+</script>
+</body>
+</html>
